@@ -1,9 +1,10 @@
 "use strcit";
 
 const { HdBitcoinCashPayments } = require("@faast/bitcoin-cash-payments");
-const { executeQuery, connection } = require("../database/db");
 const { NetworkType } = require("@faast/payments-common");
 const BCHJS = require("@psf/bch-js");
+
+const { executeQuery, connection } = require("../database/db");
 const eth = require("../eth/eth");
 
 const payments = new HdBitcoinCashPayments({
@@ -18,7 +19,7 @@ let bchjs = new BCHJS({ restURL: BCHN_MAINNET });
 async function processUtxos() {
   try {
     const balance = await bchjs.Electrumx.utxo(process.env.BCH_SIGNER1_ADDRESS);
-    const utxosInfo = await bchjs.SLP.Utils.tokenUtxoDetails(balance.utxos);
+    const slpUtxosInfo = await bchjs.SLP.Utils.tokenUtxoDetails(balance.utxos);
 
     for (let i = 0; i < balance.utxos.length; i++) {
       if (balance.utxos[i].value >= process.env.MIN_BCH_VALUE) {
@@ -27,7 +28,7 @@ async function processUtxos() {
         if (opReturn) {
           executeQuery(
             connection,
-            `SELECT * FROM slpToWslpRequests WHERE slpTxId='${opReturn[1]}' AND processed='false'`,
+            `SELECT * FROM slpToWslpRequests WHERE slpTxId='${opReturn[1]}'`,
             async function (results) {
               if (results.length == 0) {
                 executeQuery(
@@ -36,7 +37,9 @@ async function processUtxos() {
                   function () {}
                 );
               } else {
-                await processSLPTransaction(results[0], utxosInfo);
+                if (results[0].processed == 0) {
+                  await processSLPTransaction(results[0], slpUtxosInfo);
+                }
               }
             }
           );
@@ -51,9 +54,8 @@ async function processUtxos() {
 
 async function parseUtxo(utxo) {
   try {
-    const txDetails = await payments.getTransactionInfo(utxo.tx_hash);
     const txData = await bchjs.RawTransactions.getRawTransaction(
-      txDetails.data.txid,
+      utxo.tx_hash,
       true
     );
 
@@ -84,12 +86,42 @@ async function processSLPTransaction(data, utxosInfo) {
   try {
     for (let i = 0; i < utxosInfo.length; i++) {
       if (utxosInfo[i].tx_hash === data.slpTxId) {
+        const amount = await parseSlpUtxo(utxosInfo[i]);
         const address = await eth.getWslpAddressForSlpAddress(utxosInfo[i]);
-        console.log(address);
+
+        await eth.submitMultiSigTransaction(
+          address,
+          data.ethDestAddress,
+          new eth.web3.utils.BN(amount * 10 ** utxosInfo[i].decimals),
+          data.slpTxId
+        );
       }
     }
   } catch (err) {
-    console.error(err);
+    console.error("Error in processSLPTransaction: ", err);
+  }
+}
+
+async function parseSlpUtxo(slpUtxo) {
+  try {
+    const txData = await bchjs.RawTransactions.getRawTransaction(
+      slpUtxo.tx_hash,
+      true
+    );
+
+    for (let i = 0; i < txData.vout.length; i++) {
+      const script = bchjs.Script.toASM(
+        Buffer.from(txData.vout[i].scriptPubKey.hex, "hex")
+      ).split(" ");
+
+      if (script[0] !== "OP_RETURN") {
+        continue;
+      }
+
+      return script[5];
+    }
+  } catch (err) {
+    console.error("Error in parseUtxo: ", err);
   }
 }
 
