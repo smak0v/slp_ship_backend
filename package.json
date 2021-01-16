@@ -9,6 +9,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@faast/bitcoin-cash-payments": "^4.0.0",
+    "@faast/payments-common": "^4.0.0",
     "@psf/bch-js": "^4.5.4",
     "dotenv": "^8.2.0",
     "express": "^4.17.1",
@@ -16,6 +18,7 @@
     "web4bch": "^0.1.2"
   },
   "devDependencies": {
-    "mysql": "^2.18.1"
+    "mysql": "^2.18.1",
+    "node-fetch": "^2.6.1"
   }
 }

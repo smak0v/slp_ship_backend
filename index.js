@@ -1,3 +1,5 @@
+"use strcit";
+
 const dotenvConfig = require("dotenv").config();
 
 if (dotenvConfig.error) {

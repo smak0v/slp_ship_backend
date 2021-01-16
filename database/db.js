@@ -1,3 +1,5 @@
+"use strcit";
+
 var mysql = require("mysql");
 
 var connection = mysql.createConnection({
@@ -21,8 +23,10 @@ connection.connect(function (err) {
       id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
       slpTxId VARCHAR(255) NOT NULL UNIQUE,
       ethDestAddress VARCHAR(255) NOT NULL,
-      createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )`
+      createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      processed BOOLEAN NOT NULL
+    )`,
+    function () {}
   );
 
   executeQuery(
@@ -31,18 +35,20 @@ connection.connect(function (err) {
       id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
       ethTxId VARCHAR(255) NOT NULL UNIQUE,
       slpDestAddress VARCHAR(255) NOT NULL,
-      createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )`
+      createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      processed BOOLEAN NOT NULL
+    )`,
+    function () {}
   );
 });
 
-function executeQuery(connection, query) {
+function executeQuery(connection, query, callback) {
   connection.query(query, function (err, result) {
     if (err) {
       throw err;
     }
 
-    return result;
+    return callback(result);
   });
 }
 
