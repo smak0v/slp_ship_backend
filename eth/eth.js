@@ -17,23 +17,27 @@ const multiSigWalletInstance = new web3.eth.Contract(
   process.env.MULTI_SIG_WALLET
 );
 
-function getWslpAddressForSlpAddress(utxoInfo) {
-  factoryInstance.methods
-    .getErc20(utxoInfo.tokenId)
-    .call({ from: process.env.ETH_ADMIN_ADDRESS })
-    .then(async function (result) {
-      if (result === "0x0000000000000000000000000000000000000000") {
-        await createWslpToken(
-          utxoInfo.tokenId,
-          utxoInfo.tokenTicker,
-          utxoInfo.tokenName,
-          utxoInfo.decimals
-        );
-        return getWslpAddressForSlpAddress(utxoInfo);
-      } else {
-        return result;
-      }
-    });
+async function getWslpAddressForSlpAddress(utxoInfo) {
+  try {
+    return factoryInstance.methods
+      .getErc20(utxoInfo.tokenId)
+      .call({ from: process.env.ETH_ADMIN_ADDRESS })
+      .then(async function (result) {
+        if (result === "0x0000000000000000000000000000000000000000") {
+          await createWslpToken(
+            utxoInfo.tokenId,
+            utxoInfo.tokenTicker,
+            utxoInfo.tokenName,
+            utxoInfo.decimals
+          );
+          return await getWslpAddressForSlpAddress(utxoInfo);
+        } else {
+          return result;
+        }
+      });
+  } catch (err) {
+    console.error(err);
+  }
 }
 
 async function createWslpToken(slpTokenAddress, symbol, name, decimals) {
@@ -47,6 +51,10 @@ async function createWslpToken(slpTokenAddress, symbol, name, decimals) {
       gas: process.env.GAS_LIMIT,
       value: 0,
       gasPrice: web3.utils.toWei(gasPrice.fast.toString(), "gwei"),
+      nonce: await web3.eth.getTransactionCount(
+        process.env.ETH_ADMIN_ADDRESS,
+        "pending"
+      ),
       data: factoryInstance.methods
         .createWslp(slpTokenAddress, symbol, name, decimals)
         .encodeABI(),

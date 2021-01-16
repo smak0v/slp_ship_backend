@@ -84,7 +84,8 @@ async function processSLPTransaction(data, utxosInfo) {
   try {
     for (let i = 0; i < utxosInfo.length; i++) {
       if (utxosInfo[i].tx_hash === data.slpTxId) {
-        const address = eth.getWslpAddressForSlpAddress(utxosInfo[i]);
+        const address = await eth.getWslpAddressForSlpAddress(utxosInfo[i]);
+        console.log(address);
       }
     }
   } catch (err) {
