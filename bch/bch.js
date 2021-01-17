@@ -17,7 +17,9 @@ const WATCH_INTERVAL = 1000 * 60 * 1.5;
 
 const bchjs = new BCHJS({ restURL: BCHN_MAINNET });
 
-(async function loopProcessUtxos() {
+loopProcessUtxos();
+
+async function loopProcessUtxos() {
   try {
     await processUtxos();
   } catch (err) {
@@ -25,7 +27,7 @@ const bchjs = new BCHJS({ restURL: BCHN_MAINNET });
   } finally {
     setTimeout(loopProcessUtxos, WATCH_INTERVAL);
   }
-})();
+}
 
 async function processUtxos() {
   const balance = await bchjs.Electrumx.utxo(process.env.BCH_SIGNER1_ADDRESS);
