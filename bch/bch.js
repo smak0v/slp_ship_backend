@@ -2,12 +2,10 @@
 
 const { HdBitcoinCashPayments } = require("@faast/bitcoin-cash-payments");
 const { NetworkType } = require("@faast/payments-common");
-const { BigNumber } = require("bignumber.js");
 const BITBOXSDK = require("bitbox-sdk");
 const BCHJS = require("@psf/bch-js");
 const {
   BitboxNetwork,
-  SlpBalancesResult,
   Slp,
   TransactionHelpers,
 } = require("slpjs/index");
