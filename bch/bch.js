@@ -13,49 +13,53 @@ const payments = new HdBitcoinCashPayments({
 });
 
 const BCHN_MAINNET = "https://bchn.fullstack.cash/v3/";
+const WATCH_INTERVAL = 1000 * 60 * 1.5;
 
 const bchjs = new BCHJS({ restURL: BCHN_MAINNET });
 
-setInterval(processUtxos, 90000); // 1.5 minute
-
-async function processUtxos() {
+(async function loopProcessUtxos() {
   try {
-    const balance = await bchjs.Electrumx.utxo(process.env.BCH_SIGNER1_ADDRESS);
-    const slpUtxosInfo = await bchjs.SLP.Utils.tokenUtxoDetails(balance.utxos);
-
-    for (let i = 0; i < balance.utxos.length; i++) {
-      if (balance.utxos[i].value >= process.env.MIN_BCH_VALUE) {
-        const opReturn = await parseUtxo(balance.utxos[i]);
-
-        if (opReturn) {
-          await executeQuery(
-            connection,
-            `SELECT * FROM slpToWslpRequests WHERE slpTxId='${opReturn[1]}'`,
-            async function (results) {
-              if (results.length == 0) {
-                await executeQuery(
-                  connection,
-                  `INSERT INTO slpToWslpRequests (slpTxId, ethDestAddress, processed) VALUES ('${opReturn[1]}', '${opReturn[2]}', 0)`,
-                  async function () {
-                    await processSLPTransaction(
-                      { slpTxId: opReturn[1], ethDestAddress: opReturn[2] },
-                      slpUtxosInfo
-                    );
-                  }
-                );
-              } else {
-                if (results[0].processed == 0) {
-                  await processSLPTransaction(results[0], slpUtxosInfo);
-                }
-              }
-            }
-          );
-        }
-      }
-    }
+    await processUtxos();
   } catch (err) {
     console.error("Error in processUtxos: ", err);
-    throw err;
+  } finally {
+    setTimeout(loopProcessUtxos, WATCH_INTERVAL);
+  }
+})();
+
+async function processUtxos() {
+  const balance = await bchjs.Electrumx.utxo(process.env.BCH_SIGNER1_ADDRESS);
+  const slpUtxosInfo = await bchjs.SLP.Utils.tokenUtxoDetails(balance.utxos);
+
+  for (let i = 0; i < balance.utxos.length; i++) {
+    if (balance.utxos[i].value >= process.env.MIN_BCH_VALUE) {
+      const opReturn = await parseUtxo(balance.utxos[i]);
+
+      if (opReturn) {
+        await executeQuery(
+          connection,
+          `SELECT * FROM slpToWslpRequests WHERE slpTxId='${opReturn[1]}'`,
+          async function (results) {
+            if (results.length == 0) {
+              await executeQuery(
+                connection,
+                `INSERT INTO slpToWslpRequests (slpTxId, ethDestAddress, processed) VALUES ('${opReturn[1]}', '${opReturn[2]}', 0)`,
+                async function () {
+                  await processSLPTransaction(
+                    { slpTxId: opReturn[1], ethDestAddress: opReturn[2] },
+                    slpUtxosInfo
+                  );
+                }
+              );
+            } else {
+              if (results[0].processed == 0) {
+                await processSLPTransaction(results[0], slpUtxosInfo);
+              }
+            }
+          }
+        );
+      }
+    }
   }
 }
 
