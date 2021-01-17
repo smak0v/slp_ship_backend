@@ -48,7 +48,7 @@ multiSigWalletInstance.events.Confirmation({}, async function (error, event) {
       .then(async function (result) {
         const decodedData = abiDecoder.decodeMethod(result.data);
 
-        executeQuery(
+        await executeQuery(
           connection,
           `UPDATE slpToWslpRequests SET processed=1 WHERE slpTxId='${decodedData.params[2].value}'`,
           function () {}
@@ -56,6 +56,18 @@ multiSigWalletInstance.events.Confirmation({}, async function (error, event) {
       });
   }
 });
+
+factoryInstance.events.WslpCreated({}, async function (error, event) {
+  await executeQuery(
+    connection,
+    `INSERT INMTo slpToWslp (slp, wslp) VALUES ('${event._slp}', '${event._erc20}')`,
+    function () {}
+  );
+
+  // TODO subscribe on token event SlpUnlockRequested
+});
+
+// TODO check factory for existing SLP tokens and subscribe for their SlpUnlockRequested events
 
 async function getGasPrice() {
   try {

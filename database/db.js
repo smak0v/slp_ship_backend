@@ -9,7 +9,7 @@ var connection = mysql.createConnection({
   database: "slp_ship",
 });
 
-connection.connect(function (err) {
+connection.connect(async function (err) {
   if (err) {
     console.log(err);
     throw err;
@@ -17,7 +17,7 @@ connection.connect(function (err) {
 
   console.log("Connected to the database!");
 
-  executeQuery(
+  await executeQuery(
     connection,
     `CREATE TABLE IF NOT EXISTS slpToWslpRequests (
       id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -29,7 +29,7 @@ connection.connect(function (err) {
     function () {}
   );
 
-  executeQuery(
+  await executeQuery(
     connection,
     `CREATE TABLE IF NOT EXISTS wslpToSlpRequests (
       id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -40,10 +40,21 @@ connection.connect(function (err) {
     )`,
     function () {}
   );
+
+  await executeQuery(
+    connection,
+    `CREATE TABLE IF NOT EXISTS slpToWslp (
+      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      slp VARCHAR(255) NOT NULL,
+      wslp VARCHAR(255) NOT NULL,
+      createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    function () {}
+  );
 });
 
-function executeQuery(connection, query, callback) {
-  connection.query(query, function (err, result) {
+async function executeQuery(connection, query, callback) {
+  await connection.query(query, function (err, result) {
     if (err) {
       throw err;
     }

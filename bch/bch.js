@@ -14,7 +14,9 @@ const payments = new HdBitcoinCashPayments({
 
 const BCHN_MAINNET = "https://bchn.fullstack.cash/v3/";
 
-let bchjs = new BCHJS({ restURL: BCHN_MAINNET });
+const bchjs = new BCHJS({ restURL: BCHN_MAINNET });
+
+setInterval(processUtxos, 90000); // 1.5 minute
 
 async function processUtxos() {
   try {
@@ -26,15 +28,20 @@ async function processUtxos() {
         const opReturn = await parseUtxo(balance.utxos[i]);
 
         if (opReturn) {
-          executeQuery(
+          await executeQuery(
             connection,
             `SELECT * FROM slpToWslpRequests WHERE slpTxId='${opReturn[1]}'`,
             async function (results) {
               if (results.length == 0) {
-                executeQuery(
+                await executeQuery(
                   connection,
                   `INSERT INTO slpToWslpRequests (slpTxId, ethDestAddress, processed) VALUES ('${opReturn[1]}', '${opReturn[2]}', 0)`,
-                  function () {}
+                  async function () {
+                    await processSLPTransaction(
+                      { slpTxId: opReturn[1], ethDestAddress: opReturn[2] },
+                      slpUtxosInfo
+                    );
+                  }
                 );
               } else {
                 if (results[0].processed == 0) {
@@ -124,5 +131,3 @@ async function parseSlpUtxo(slpUtxo) {
     console.error("Error in parseUtxo: ", err);
   }
 }
-
-processUtxos();

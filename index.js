@@ -7,8 +7,10 @@ if (dotenvConfig.error) {
 }
 
 const http = require("http");
+
 const db = require("./database/db");
-const bchjs = require("./bch/bch");
+const bch = require("./bch/bch");
+const eth = require("./eth/eth");
 
 const hostname = "127.0.0.1";
 const port = 3000;
