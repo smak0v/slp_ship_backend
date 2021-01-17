@@ -19,7 +19,10 @@
   },
   "devDependencies": {
     "abi-decoder": "^2.3.0",
+    "bitbox-sdk": "^8.11.2",
+    "bitcore-lib-cash": "^8.24.1",
     "mysql": "^2.18.1",
-    "node-fetch": "^2.6.1"
+    "node-fetch": "^2.6.1",
+    "slpjs": "^0.27.11"
   }
 }

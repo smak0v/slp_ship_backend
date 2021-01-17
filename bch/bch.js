@@ -2,7 +2,15 @@
 
 const { HdBitcoinCashPayments } = require("@faast/bitcoin-cash-payments");
 const { NetworkType } = require("@faast/payments-common");
+const { BigNumber } = require("bignumber.js");
+const BITBOXSDK = require("bitbox-sdk");
 const BCHJS = require("@psf/bch-js");
+const {
+  BitboxNetwork,
+  SlpBalancesResult,
+  Slp,
+  TransactionHelpers,
+} = require("slpjs/index");
 
 const { executeQuery, connection } = require("../database/db");
 const eth = require("../eth/eth");
@@ -99,6 +107,7 @@ async function processSLPTransaction(data, utxosInfo) {
   try {
     for (let i = 0; i < utxosInfo.length; i++) {
       if (utxosInfo[i].tx_hash === data.slpTxId) {
+        // console.log(utxosInfo[i]);
         const amount = await parseSlpUtxo(utxosInfo[i]);
         const address = await eth.getWslpAddressForSlpAddress(utxosInfo[i]);
 
@@ -117,10 +126,13 @@ async function processSLPTransaction(data, utxosInfo) {
 
 async function parseSlpUtxo(slpUtxo) {
   try {
+    // console.log(slpUtxo.tokenQty);
     const txData = await bchjs.RawTransactions.getRawTransaction(
       slpUtxo.tx_hash,
       true
     );
+
+    // console.log(txData.tokenQty);
 
     for (let i = 0; i < txData.vout.length; i++) {
       const script = bchjs.Script.toASM(
@@ -131,9 +143,99 @@ async function parseSlpUtxo(slpUtxo) {
         continue;
       }
 
+      // console.log(script);
       return script[5];
     }
   } catch (err) {
     console.error("Error in parseUtxo: ", err);
   }
 }
+
+async function createSignAdnSendMultiSigTransaction(
+  receiver,
+  amount,
+  slpToken
+) {
+  const BITBOX = new BITBOXSDK.BITBOX({
+    restURL: "https://rest.bitcoin.com/v2/",
+  });
+  const bitboxNetwork = new BitboxNetwork(BITBOX);
+  const helpers = new TransactionHelpers(new Slp(BITBOX));
+
+  const pubkey_signer_1 = process.env.BCH_SIGNER1_PUBKEY;
+  const pubkey_signer_2 = process.env.BCH_SIGNER2_PUBKEY;
+  const pubkey_signer_3 = process.env.BCH_SIGNER3_PUBKEY;
+
+  const wifs = [
+    process.env.BCH_SIGNER1_WIF,
+    process.env.BCH_SIGNER2_WIF,
+    process.env.BCH_SIGNER3_WIF,
+  ];
+
+  const receiver = [receiver];
+  const sendAmounts = [amount];
+
+  const tokenInfo = await bitboxNetwork.getTokenInformation(slpToken);
+
+  console.log("Token precision: " + tokenInfo.decimals.toString());
+
+  let balances = await bitboxNetwork.getAllSlpBalancesAndUtxos(
+    process.env.BCH_SIGNER1_SLP_ADDRESS
+  );
+
+  console.log(balances);
+
+  if (balances.slpTokenBalances[slpToken] === undefined)
+    console.log("You need to fund the address with tokens and BCH.");
+
+  console.log(
+    "Token balance: ",
+    balances.slpTokenBalances[slpToken].toFixed() / 10 ** tokenInfo.decimals
+  );
+
+  let inputUtxos = balances.slpTokenUtxos[slpToken];
+  inputUtxos = inputUtxos.concat(balances.nonSlpUtxos);
+
+  let extraFee = (2 * 33 + 2 * 72 + 10) * inputUtxos.length;
+
+  let unsignedTxnHex = helpers.simpleTokenSend({
+    slpToken,
+    sendAmounts,
+    inputUtxos,
+    tokenReceiverAddresses: receiver,
+    changeReceiverAddress: process.env.BCH_SIGNER1_SLP_ADDRESS,
+    extraFee,
+  });
+
+  let redeemData = helpers.build_P2SH_multisig_redeem_data(3, [
+    pubkey_signer_1,
+    pubkey_signer_2,
+    pubkey_signer_3,
+  ]);
+  let scriptSigs = inputUtxos.map((txo, i) => {
+    let sigData = redeemData.pubKeys.map((pk, j) => {
+      if (wifs[j]) {
+        return helpers.get_transaction_sig_p2sh(
+          unsignedTxnHex,
+          wifs[j],
+          i,
+          txo.satoshis,
+          redeemData.lockingScript,
+          redeemData.lockingScript
+        );
+      } else {
+        return helpers.get_transaction_sig_filler(i, pk);
+      }
+    });
+    return helpers.build_P2SH_multisig_scriptSig(redeemData, i, sigData);
+  });
+
+  let signedTxn = helpers.addScriptSigs(unsignedTxnHex, scriptSigs);
+  let sendTxid = await bitboxNetwork.sendTx(signedTxn);
+
+  console.log("SEND txn complete:", sendTxid);
+}
+
+module.exports = {
+  createSignAdnSendMultiSigTransaction,
+};

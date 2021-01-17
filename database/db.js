@@ -33,10 +33,11 @@ connection.connect(async function (err) {
     connection,
     `CREATE TABLE IF NOT EXISTS wslpToSlpRequests (
       id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-      ethTxId VARCHAR(255) NOT NULL UNIQUE,
+      account VARCHAR(255) NOT NULL,
+      amount INT NOT NULL,
+      wslpTokenAddress VARCHAR(255) NOT NULL,
       slpDestAddress VARCHAR(255) NOT NULL,
-      createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      processed BOOLEAN NOT NULL
+      createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`,
     function () {}
   );

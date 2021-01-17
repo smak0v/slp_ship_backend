@@ -4,6 +4,7 @@ const abiDecoder = require("abi-decoder");
 
 const { prepareETHAddress } = require("../utils/prepareEthAddress");
 const { executeQuery, connection } = require("../database/db");
+const { createSignAdnSendMultiSigTransaction } = require("../bch/bch");
 
 const factoryAbi = require("../contracts/Factory.json").abi;
 const multiSigWalletAbi = require("../contracts/MultiSigWallet.json").abi;
@@ -23,6 +24,7 @@ const multiSigWalletInstance = new web3.eth.Contract(
 );
 
 abiDecoder.addABI(wslpAbi);
+checkFactoryForExistingWslp();
 
 multiSigWalletInstance.events.Confirmation({}, async function (error, event) {
   if (event.returnValues.sender == process.env.ETH_SIGNER1) {
@@ -63,11 +65,26 @@ factoryInstance.events.WslpCreated({}, async function (error, event) {
     `INSERT INMTo slpToWslp (slp, wslp) VALUES ('${event._slp}', '${event._erc20}')`,
     function () {}
   );
-
-  // TODO subscribe on token event SlpUnlockRequested
+  console.log("WSLP created: ", event._erc20);
+  subscribeOnWslpUnlockRequest(event._erc20);
 });
 
-// TODO check factory for existing SLP tokens and subscribe for their SlpUnlockRequested events
+async function checkFactoryForExistingWslp() {
+  const wslpCount = await factoryInstance.methods
+    .allPairsLength()
+    .call({ from: process.env.ETH_ADMIN });
+
+  for (let i = 0; i < wslpCount; i++) {
+    const slpAddress = await factoryInstance.methods
+      .allSlp(i)
+      .call({ from: process.env.ETH_ADMIN });
+    const wslpAddress = await factoryInstance.methods
+      .getErc20(slpAddress)
+      .call({ from: process.env.ETH_ADMIN });
+
+    subscribeOnWslpUnlockRequest(wslpAddress);
+  }
+}
 
 async function getGasPrice() {
   try {
@@ -198,6 +215,27 @@ async function confirmMultisigTransaction(from, privateKey, txId) {
   } catch (err) {
     console.error("Error in confirmMultisigTransaction: ", err);
   }
+}
+
+function subscribeOnWslpUnlockRequest(wslpAddress) {
+  const wslpTokenInstance = new web3.eth.Contract(wslpAbi, wslpAddress);
+
+  wslpTokenInstance.events.SlpUnlockRequested(
+    {},
+    async function (error, event) {
+      await executeQuery(
+        connection,
+        `INSERT INTO wslpToSlpRequests (account, amount, wslpTokenAddress, slpDestAddress) VALUES ('${event._account}', '${event._amount}', '${event._token}', '${event._slpAddr}')`,
+        async function () {
+          await createSignAdnSendMultiSigTransaction(
+            event._token,
+            event._amount,
+            event._slpTokenAddress
+          );
+        }
+      );
+    }
+  );
 }
 
 module.exports = {
