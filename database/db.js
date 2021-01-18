@@ -19,6 +19,16 @@ connection.connect(async function (err) {
 
   await executeQuery(
     connection,
+    `CREATE TABLE IF NOT EXISTS processedUtxos (
+      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      utxo VARCHAR(255) NOT NULL UNIQUE,
+      createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    function () {}
+  );
+
+  await executeQuery(
+    connection,
     `CREATE TABLE IF NOT EXISTS slpToWslpRequests (
       id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
       slpTxId VARCHAR(255) NOT NULL UNIQUE,

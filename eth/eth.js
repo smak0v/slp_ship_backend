@@ -1,10 +1,9 @@
 const Web3 = require("web3");
-const fetch = require("node-fetch");
 const abiDecoder = require("abi-decoder");
 
 const { prepareETHAddress } = require("../utils/prepareEthAddress");
 const { executeQuery, connection } = require("../database/db");
-const { createSignAdnSendMultiSigTransaction } = require("../bch/bch");
+const bch = require("../bch/bch");
 
 const factoryAbi = require("../contracts/Factory.json").abi;
 const multiSigWalletAbi = require("../contracts/MultiSigWallet.json").abi;
@@ -88,15 +87,11 @@ async function checkFactoryForExistingWslp() {
 
 async function getGasPrice() {
   try {
-    const gasPrice = await (
-      await fetch("https://www.etherchain.org/api/gasPriceOracle")
-    ).json();
-
-    return web3.utils.toWei(gasPrice.fastest.toString(), "gwei");
+    return web3.utils.toWei("2", "gwei");
   } catch (err) {
     console.error("Error in getGasPrice: ", err);
 
-    return null;
+    return 0;
   }
 }
 
@@ -106,7 +101,7 @@ async function getNonce(address) {
   } catch (err) {
     console.error("Error in getNonce: ", err);
 
-    return null;
+    return 0;
   }
 }
 
@@ -218,24 +213,32 @@ async function confirmMultisigTransaction(from, privateKey, txId) {
 }
 
 function subscribeOnWslpUnlockRequest(wslpAddress) {
-  const wslpTokenInstance = new web3.eth.Contract(wslpAbi, wslpAddress);
+  try {
+    const wslpTokenInstance = new web3.eth.Contract(wslpAbi, wslpAddress);
 
-  wslpTokenInstance.events.SlpUnlockRequested(
-    {},
-    async function (error, event) {
-      await executeQuery(
-        connection,
-        `INSERT INTO wslpToSlpRequests (account, amount, wslpTokenAddress, slpDestAddress) VALUES ('${event._account}', '${event._amount}', '${event._token}', '${event._slpAddr}')`,
-        async function () {
-          await createSignAdnSendMultiSigTransaction(
-            event._token,
-            event._amount,
-            event._slpTokenAddress
-          );
-        }
-      );
-    }
-  );
+    wslpTokenInstance.events.SlpUnlockRequested(
+      {},
+      async function (error, event) {
+        await executeQuery(
+          connection,
+          `INSERT INTO wslpToSlpRequests (account, amount, wslpTokenAddress, slpDestAddress) VALUES ('${event.returnValues._account}', '${event.returnValues._amount}', '${event.returnValues._token}', '${event.returnValues._slpAddr}')`,
+          async function () {
+            try {
+              await bch.createSignAndSendMultiSigTransaction(
+                event.returnValues._token,
+                event.returnValues._amount,
+                event.returnValues._slpTokenAddress
+              );
+            } catch (err) {
+              console.error("Error in subscribeOnWslpUnlockRequest: ", err);
+            }
+          }
+        );
+      }
+    );
+  } catch (err) {
+    console.error("Error in subscribeOnWslpUnlockRequest: ", err);
+  }
 }
 
 module.exports = {
