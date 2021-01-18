@@ -61,11 +61,11 @@ multiSigWalletInstance.events.Confirmation({}, async function (error, event) {
 factoryInstance.events.WslpCreated({}, async function (error, event) {
   await executeQuery(
     connection,
-    `INSERT INMTo slpToWslp (slp, wslp) VALUES ('${event._slp}', '${event._erc20}')`,
+    `INSERT INMTo slpToWslp (slp, wslp) VALUES ('${event.returnValues._slp}', '${event.returnValues._erc20}')`,
     function () {}
   );
-  console.log("WSLP created: ", event._erc20);
-  subscribeOnWslpUnlockRequest(event._erc20);
+  console.log("WSLP created: ", event.returnValues._erc20);
+  subscribeOnWslpUnlockRequest(event.returnValues._erc20);
 });
 
 async function checkFactoryForExistingWslp() {
@@ -224,10 +224,13 @@ function subscribeOnWslpUnlockRequest(wslpAddress) {
           `INSERT INTO wslpToSlpRequests (account, amount, wslpTokenAddress, slpDestAddress) VALUES ('${event.returnValues._account}', '${event.returnValues._amount}', '${event.returnValues._token}', '${event.returnValues._slpAddr}')`,
           async function () {
             try {
+              console.log(event.returnValues._slpAddr + " " + Buffer.from(event.returnValues._slpAddr, "hex").toString("ascii"));
+              console.log(event.returnValues._amount);
+              console.log(event.returnValues._token  + " " +  Buffer.from(event.returnValues._token, "hex").toString("ascii"));
               await bch.createSignAndSendMultiSigTransaction(
-                event.returnValues._token,
+                event.returnValues._slpAddr,
                 event.returnValues._amount,
-                event.returnValues._slpTokenAddress
+                event.returnValues._token
               );
             } catch (err) {
               console.error("Error in subscribeOnWslpUnlockRequest: ", err);
