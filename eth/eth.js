@@ -8,6 +8,7 @@ const { BitboxNetwork, Slp, TransactionHelpers } = require("slpjs/index");
 const { HdBitcoinCashPayments } = require("@faast/bitcoin-cash-payments");
 const { NetworkType } = require("@faast/payments-common");
 const BITBOXSDK = require("bitbox-sdk");
+const BigNumber = require("bignumber.js")
 
 const factoryAbi = require("../contracts/Factory.json").abi;
 const multiSigWalletAbi = require("../contracts/MultiSigWallet.json").abi;
@@ -244,33 +245,25 @@ async function createSignAndSendMultiSigTransaction(
     ];
 
     receiver = [receiver];
-    const sendAmounts = [amount];
+    const sendAmounts = [new BigNumber(amount)];
 
     const tokenInfo = await bitboxNetwork.getTokenInformation(slpToken);
-
-    console.log("Token precision: " + tokenInfo.decimals.toString());
 
     let balances = await bitboxNetwork.getAllSlpBalancesAndUtxos(
       process.env.BCH_SIGNER1_SLP_ADDRESS
     );
 
-    console.log(balances);
-
     if (balances.slpTokenBalances[slpToken] === undefined)
       console.log("You need to fund the address with tokens and BCH.");
-
-    console.log(
-      "Token balance: ",
-      balances.slpTokenBalances[slpToken].toFixed() / 10 ** tokenInfo.decimals
-    );
 
     let inputUtxos = balances.slpTokenUtxos[slpToken];
     inputUtxos = inputUtxos.concat(balances.nonSlpUtxos);
 
     let extraFee = (2 * 33 + 2 * 72 + 10) * inputUtxos.length;
+    let tokenId = slpToken;
 
     let unsignedTxnHex = helpers.simpleTokenSend({
-      slpToken,
+      tokenId,
       sendAmounts,
       inputUtxos,
       tokenReceiverAddresses: receiver,

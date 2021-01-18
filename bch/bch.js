@@ -4,6 +4,14 @@ const BCHJS = require("@psf/bch-js");
 
 const { executeQuery, connection } = require("../database/db");
 const eth = require("../eth/eth");
+const BITBOXSDK = require("bitbox-sdk");
+
+const BITBOX = new BITBOXSDK.BITBOX({
+  restURL: "https://rest.bitcoin.com/v2/",
+});
+
+const { BitboxNetwork } = require("slpjs/index");
+const bitboxNetwork = new BitboxNetwork(BITBOX);
 
 const BCHN_MAINNET = "https://bchn.fullstack.cash/v3/";
 const WATCH_INTERVAL = 1000 * 60 * 1.5;
@@ -29,10 +37,13 @@ async function loopProcessUtxos() {
 async function processUtxos() {
   const balance = await bchjs.Electrumx.utxo(process.env.BCH_SIGNER1_ADDRESS);
   const slpUtxosInfo = await bchjs.SLP.Utils.tokenUtxoDetails(balance.utxos);
+  const utxosWithTxDetails = await bitboxNetwork.getUtxoWithTxDetails(
+    process.env.BCH_SIGNER1_ADDRESS
+  );
 
-  for (let i = 0; i < balance.utxos.length; i++) {
-    if (balance.utxos[i].value >= process.env.MIN_BCH_VALUE) {
-      const opReturn = await parseUtxo(balance.utxos[i]);
+  for (let i = 0; i < utxosWithTxDetails.length; i++) {
+    if (utxosWithTxDetails[i].satoshis >= process.env.MIN_BCH_VALUE) {
+      const opReturn = await parseUtxo(utxosWithTxDetails[i]);
 
       if (opReturn) {
         await executeQuery(
@@ -51,7 +62,7 @@ async function processUtxos() {
                 }
               );
             } else {
-              if (results[0].processed == 0 && slpUtxosInfo !== undefined) {
+              if (results[0].processed == 0) {
                 await processSLPTransaction(results[0], slpUtxosInfo);
               }
             }
@@ -64,14 +75,9 @@ async function processUtxos() {
 
 async function parseUtxo(utxo) {
   try {
-    const txData = await bchjs.RawTransactions.getRawTransaction(
-      utxo.tx_hash,
-      true
-    );
-
-    for (let i = 0; i < txData.vout.length; i++) {
+    for (let i = 0; i < utxo.tx.vout.length; i++) {
       const script = bchjs.Script.toASM(
-        Buffer.from(txData.vout[i].scriptPubKey.hex, "hex")
+        Buffer.from(utxo.tx.vout[i].scriptPubKey.hex, "hex")
       ).split(" ");
 
       if (script[0] !== "OP_RETURN") {
@@ -89,14 +95,19 @@ async function parseUtxo(utxo) {
     }
   } catch (err) {
     console.error("Error in parseUtxo: ", err);
-    await delay(60000);
-    return parseUtxo(utxo);
   }
 }
 
 async function processSLPTransaction(data, utxosInfo) {
   try {
     for (let i = 0; i < utxosInfo.length; i++) {
+      if (utxosInfo[i].tx_hash === data.slpTxId) {
+        const txData = await bitboxNetwork.getTransactionDetails(
+          utxosInfo[i].tx_hash
+        );
+
+        // TODO check
+      }
       if (
         utxosInfo[i].tx_hash === data.slpTxId &&
         utxosInfo[i].utxoType === "token" &&
