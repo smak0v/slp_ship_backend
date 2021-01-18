@@ -3,7 +3,11 @@ const abiDecoder = require("abi-decoder");
 
 const { prepareETHAddress } = require("../utils/prepareEthAddress");
 const { executeQuery, connection } = require("../database/db");
-const bch = require("../bch/bch");
+
+const { BitboxNetwork, Slp, TransactionHelpers } = require("slpjs/index");
+const { HdBitcoinCashPayments } = require("@faast/bitcoin-cash-payments");
+const { NetworkType } = require("@faast/payments-common");
+const BITBOXSDK = require("bitbox-sdk");
 
 const factoryAbi = require("../contracts/Factory.json").abi;
 const multiSigWalletAbi = require("../contracts/MultiSigWallet.json").abi;
@@ -12,6 +16,11 @@ const wslpAbi = require("../contracts/WrappedSLP.json").abi;
 const web3 = new Web3(
   `wss://kovan.infura.io/ws/v3/${process.env.INFURA_PROJECT_ID}`
 );
+
+const payments = new HdBitcoinCashPayments({
+  hdKey: process.env.BCH_SIGNER1_PUBKEY,
+  network: NetworkType.Mainnet,
+});
 
 const factoryInstance = new web3.eth.Contract(
   factoryAbi,
@@ -212,6 +221,95 @@ async function confirmMultisigTransaction(from, privateKey, txId) {
   }
 }
 
+async function createSignAndSendMultiSigTransaction(
+  receiver,
+  amount,
+  slpToken
+) {
+  try {
+    const BITBOX = new BITBOXSDK.BITBOX({
+      restURL: "https://rest.bitcoin.com/v2/",
+    });
+    const bitboxNetwork = new BitboxNetwork(BITBOX);
+    const helpers = new TransactionHelpers(new Slp(BITBOX));
+
+    const pubkey_signer_1 = process.env.BCH_SIGNER1_PUBKEY;
+    const pubkey_signer_2 = process.env.BCH_SIGNER2_PUBKEY;
+    const pubkey_signer_3 = process.env.BCH_SIGNER3_PUBKEY;
+
+    const wifs = [
+      process.env.BCH_SIGNER1_WIF,
+      process.env.BCH_SIGNER2_WIF,
+      process.env.BCH_SIGNER3_WIF,
+    ];
+
+    receiver = [receiver];
+    const sendAmounts = [amount];
+
+    const tokenInfo = await bitboxNetwork.getTokenInformation(slpToken);
+
+    console.log("Token precision: " + tokenInfo.decimals.toString());
+
+    let balances = await bitboxNetwork.getAllSlpBalancesAndUtxos(
+      process.env.BCH_SIGNER1_SLP_ADDRESS
+    );
+
+    console.log(balances);
+
+    if (balances.slpTokenBalances[slpToken] === undefined)
+      console.log("You need to fund the address with tokens and BCH.");
+
+    console.log(
+      "Token balance: ",
+      balances.slpTokenBalances[slpToken].toFixed() / 10 ** tokenInfo.decimals
+    );
+
+    let inputUtxos = balances.slpTokenUtxos[slpToken];
+    inputUtxos = inputUtxos.concat(balances.nonSlpUtxos);
+
+    let extraFee = (2 * 33 + 2 * 72 + 10) * inputUtxos.length;
+
+    let unsignedTxnHex = helpers.simpleTokenSend({
+      slpToken,
+      sendAmounts,
+      inputUtxos,
+      tokenReceiverAddresses: receiver,
+      changeReceiverAddress: process.env.BCH_SIGNER1_SLP_ADDRESS,
+      extraFee,
+    });
+
+    let redeemData = helpers.build_P2SH_multisig_redeem_data(3, [
+      pubkey_signer_1,
+      pubkey_signer_2,
+      pubkey_signer_3,
+    ]);
+    let scriptSigs = inputUtxos.map((txo, i) => {
+      let sigData = redeemData.pubKeys.map((pk, j) => {
+        if (wifs[j]) {
+          return helpers.get_transaction_sig_p2sh(
+            unsignedTxnHex,
+            wifs[j],
+            i,
+            txo.satoshis,
+            redeemData.lockingScript,
+            redeemData.lockingScript
+          );
+        } else {
+          return helpers.get_transaction_sig_filler(i, pk);
+        }
+      });
+      return helpers.build_P2SH_multisig_scriptSig(redeemData, i, sigData);
+    });
+
+    let signedTxn = helpers.addScriptSigs(unsignedTxnHex, scriptSigs);
+    let sendTxid = await bitboxNetwork.sendTx(signedTxn);
+
+    console.log("SEND txn complete:", sendTxid);
+  } catch (err) {
+    console.error("Error in createSignAndSendMultiSigTransaction: ", err);
+  }
+}
+
 function subscribeOnWslpUnlockRequest(wslpAddress) {
   try {
     const wslpTokenInstance = new web3.eth.Contract(wslpAbi, wslpAddress);
@@ -224,10 +322,7 @@ function subscribeOnWslpUnlockRequest(wslpAddress) {
           `INSERT INTO wslpToSlpRequests (account, amount, wslpTokenAddress, slpDestAddress) VALUES ('${event.returnValues._account}', '${event.returnValues._amount}', '${event.returnValues._token}', '${event.returnValues._slpAddr}')`,
           async function () {
             try {
-              console.log(event.returnValues._slpAddr + " " + Buffer.from(event.returnValues._slpAddr, "hex").toString("ascii"));
-              console.log(event.returnValues._amount);
-              console.log(event.returnValues._token  + " " +  Buffer.from(event.returnValues._token, "hex").toString("ascii"));
-              await bch.createSignAndSendMultiSigTransaction(
+              await createSignAndSendMultiSigTransaction(
                 event.returnValues._slpAddr,
                 event.returnValues._amount,
                 event.returnValues._token
